@@ -1,52 +1,95 @@
 #include <iostream>
 
-template<typename FirstT, typename ... ArgsT>
-auto summ(FirstT first, ArgsT ... args) {
-    return first + (args + ...);
-}
-
-template<typename FirstT, typename ... ArgsT>
-auto substr(FirstT first, ArgsT ... args) {
-    return first - (args - ...);
-}
-
-template<typename FirstT, typename ... ArgsT>
-auto mult(FirstT first, ArgsT ... args) {
-    return first * (args * ...);
-}
-
-template<typename FirstT, typename ... ArgsT>
-auto divid(FirstT first, ArgsT ... args) {
-    return first / (args / ...);
-}
-
-template<int N>
-struct Factorial {
-    static const int value = N * Factorial<N - 1>::value;
+template<typename T>
+struct is_vector : std::false_type {
 };
 
-template<>
-struct Factorial<0> {
-    static const int value = 1;
+template<typename VectorValueT>
+struct is_vector<std::vector<VectorValueT>>
+        : std::true_type {
 };
+
+template<typename T>
+static const auto is_vector_v = is_vector<T>::value;
+
+template<typename FirstT, typename SecondT>
+auto substr(FirstT first, SecondT second) {
+    if constexpr (is_vector_v<FirstT>) {
+        FirstT result;
+        auto &max_vec = first.size() > second.size() ? first : second;
+        auto &min_vec = first.size() <= second.size() ? first : second;
+        for (size_t i = 0; i < min_vec.size(); ++i) {
+            result.push_back(first[i] - second[i]);
+        }
+        for (size_t i = min_vec.size(); i < max_vec.size(); ++i) {
+            result.push_back(max_vec[i]);
+        }
+        return result;
+    } else {
+        return first - second;
+    }
+}
+
+template<typename FirstT, typename SecondT>
+auto divide(FirstT first, SecondT second) {
+    if constexpr (is_vector_v<FirstT>) {
+        FirstT result;
+        auto &max_vec = first.size() > second.size() ? first : second;
+        auto &min_vec = first.size() <= second.size() ? first : second;
+        for (size_t i = 0; i < min_vec.size(); ++i) {
+            result.push_back(first[i] / second[i]);
+        }
+        for (size_t i = min_vec.size(); i < max_vec.size(); ++i) {
+            result.push_back(max_vec[i]);
+        }
+        return result;
+    } else {
+        return first / second;
+    }
+}
+
+template<typename FirstT, typename SecondT>
+auto mult(FirstT first, SecondT second) {
+    if constexpr (is_vector_v<FirstT>) {
+        FirstT result;
+        auto &max_vec = first.size() > second.size() ? first : second;
+        auto &min_vec = first.size() <= second.size() ? first : second;
+        for (size_t i = 0; i < min_vec.size(); ++i) {
+            result.push_back(first[i] * second[i]);
+        }
+        for (size_t i = min_vec.size(); i < max_vec.size(); ++i) {
+            result.push_back(max_vec[i]);
+        }
+        return result;
+    } else {
+        return first * second;
+    }
+}
 
 int main() {
-    int a{12};
-    double b{10.8};
+    std::vector<int> c{1, 2, 3, 4};
+    std::vector<int> d{1, 2};
 
-    auto result = summ(a, b, 10, 23);
-    std::cout << "Result of adding: " << result << std::endl;
+    std::cout << "Result of subtracting: ";
+    std::vector<int> res = substr(c, d);
+    std::copy(res.begin(), res.end(),
+              std::ostream_iterator<int>(std::cout, ", "));
+    int res1_2 = substr(1, 2);
 
-    auto result2 = substr(a, b, 3, 156);
-    std::cout << "Result of subtracting: " << result2 << std::endl;
+    std::cout << std::endl << std::endl;
 
-    auto result3 = mult(a, b, 6, 3, 8);
-    std::cout << "Result of multiplication: " << result3 << std::endl;
+    std::cout << "Result of dividing: ";
+    std::vector<int> res2 = divide(c, d);
+    std::copy(res2.begin(), res2.end(),
+              std::ostream_iterator<int>(std::cout, ", "));
+    int res2_2 = divide(1, 2);
 
-    auto result4 = divid(a, b, 1);
-    std::cout << "Result of dividing: " << result4 << std::endl;
+    std::cout << std::endl << std::endl;
 
-    const int n = 5;
-    std::cout << "Factorial of " << n << " is: " << Factorial<n>::value << std::endl;
-    return 0;
+    std::cout << "Result of multiplication: ";
+    std::vector<int> res3 = mult(c, d);
+    std::copy(res3.begin(), res3.end(),
+              std::ostream_iterator<int>(std::cout, ", "));
+    int res3_2 = mult(1, 2);
+
 }
