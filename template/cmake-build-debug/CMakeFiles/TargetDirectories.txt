@@ -1,0 +1,3 @@
+/Users/kseniatrusina/template/template/cmake-build-debug/CMakeFiles/template.dir
+/Users/kseniatrusina/template/template/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/kseniatrusina/template/template/cmake-build-debug/CMakeFiles/rebuild_cache.dir
