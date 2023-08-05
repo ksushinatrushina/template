@@ -1,217 +1,199 @@
-#include <iostream>
+﻿#include <iostream>
+#include <fstream>
+#include <string>
 #include <vector>
-#include <tuple>
 
-template<typename T>
-struct is_vector : std::false_type {
-};
+bool match(const std::string &ip, const std::string &mask,
+    std::vector<std::string>& ip_parts,
+    std::vector<std::string>& mask_parts) {
 
-template<typename VectorValueT>
-struct is_vector<std::vector<VectorValueT> > : std::true_type {
-};
-
-template<typename T>
-inline constexpr bool is_vector_v = is_vector<T>::value;
-
-template<typename T>
-struct is_tuple : std::false_type {
-};
-
-template<typename... Args>
-struct is_tuple<std::tuple<Args...>> : std::true_type {
-};
-
-template<typename T>
-inline constexpr bool is_tuple_v = is_tuple<T>::value;
-
-template<std::size_t... Is, typename... Ts>
-void apply_subtraction(
-        std::tuple<Ts...> &result, std::tuple<Ts...> &first, std::tuple<Ts...> &second,
-        std::index_sequence<Is...>
-) {
-    result = std::make_tuple(std::get<Is>(first) - std::get<Is>(second) ...);
-}
-
-template<typename... Ts>
-void apply_subtraction(std::tuple<Ts...> &result, std::tuple<Ts...> &first, std::tuple<Ts...> &second) {
-    apply_subtraction(result, first, second, std::make_index_sequence<std::tuple_size<std::tuple<Ts...>>::value>{});
-}
-
-template<typename FirstT, typename SecondT, typename... RestT>
-auto substr(FirstT first, SecondT second, RestT... rest) {
-    if constexpr (is_vector_v<FirstT>) {
-        using VectorValueT = typename FirstT::value_type;
-        std::vector<VectorValueT> result;
-        auto min_size = std::min(first.size(), second.size());
-        auto max_size = std::max(first.size(), second.size());
-        for (size_t i = 0; i < min_size; ++i) {
-            result.push_back(first[i] - second[i]);
-        }
-        if constexpr (std::is_same_v<FirstT, SecondT>) {
-            for (size_t i = min_size; i < max_size; ++i) {
-                result.push_back(first.size() > second.size() ? first[i] : second[i]);
-            }
-        } else {
-            // If FirstT and SecondT are different types, handle the sizes accordingly.
-            if constexpr (sizeof...(RestT) > 0) {
-                return substr(result, substr(second, rest...));
-            } else {
-                return substr(result, second);
-            }
-        }
-        return result;
-    } else if constexpr (is_tuple_v<FirstT>) {
-        FirstT result;
-        apply_subtraction(result, first, second);
-        if constexpr (sizeof...(rest) == 0) {
-            return result;
-        } else {
-            return substr(result, rest...);
-        }
-    } else {
-        return first - second;
+    // разбиваем IP-адрес и маску на отдельные элементы
+    size_t startPosition = 0, endPosition = 0;
+    while ((endPosition = ip.find('.', startPosition)) != std::string::npos) { // цикл ищет символ точки и возвращает позицию найденной точки, либо через npose, что ее не найдено
+        ip_parts.push_back(ip.substr(startPosition, endPosition - startPosition)); // когда мы нашли точку, мы забираем все, что было между точками через функцию substr и записываем в ip_parts
+        startPosition = endPosition + 1;
     }
-}
+    ip_parts.push_back(ip.substr(startPosition));
 
-template<std::size_t... Is, typename... Ts>
-void apply_multiplication(
-        std::tuple<Ts...> &result, std::tuple<Ts...> &first, std::tuple<Ts...> &second,
-        std::index_sequence<Is...>
-) {
-    result = std::make_tuple(std::get<Is>(first) * std::get<Is>(second) ...);
-}
-
-template<typename... Ts>
-void apply_multiplication(std::tuple<Ts...> &result, std::tuple<Ts...> &first, std::tuple<Ts...> &second) {
-    apply_multiplication(result, first, second, std::make_index_sequence<std::tuple_size<std::tuple<Ts...>>::value>{});
-}
-
-template<typename FirstT, typename SecondT, typename... RestT>
-auto multiply(FirstT first, SecondT second, RestT... rest) {
-    if constexpr (is_vector_v<FirstT>) {
-        using VectorValueT = typename FirstT::value_type;
-        std::vector<VectorValueT> result;
-        auto min_size = std::min(first.size(), second.size());
-        for (size_t i = 0; i < min_size; ++i) {
-            result.push_back(first[i] * second[i]);
-        }
-        if constexpr (std::is_same_v<FirstT, SecondT>) {
-            for (size_t i = min_size; i < first.size(); ++i) {
-                result.push_back(first[i]);
-            }
-        } else {
-            // If FirstT and SecondT are different types, handle the sizes accordingly.
-            if constexpr (sizeof...(RestT) > 0) {
-                return multiply(result, multiply(second, rest...));
-            } else {
-                return multiply(result, second);
-            }
-        }
-        return result;
-    } else if constexpr (is_tuple_v<FirstT>) {
-        FirstT result;
-        apply_multiplication(result, first, second);
-        if constexpr (sizeof...(rest) == 0) {
-            return result;
-        } else {
-            return multiply(result, rest...);
-        }
-    } else {
-        return first * second;
+    startPosition = 0; // то же самое для маски
+    while ((endPosition = mask.find('.', startPosition)) != std::string::npos) {
+        mask_parts.push_back(mask.substr(startPosition, endPosition - startPosition));
+        startPosition = endPosition + 1;
     }
-}
+    mask_parts.push_back(mask.substr(startPosition));
 
-template<typename T>
-std::vector<T> div(const std::vector<T>& a, const std::vector<T>& b) {
-    if (a.size() != b.size()) {
-        throw std::runtime_error("Vector sizes do not match!");
-    }
-
-    std::vector<T> result;
-    result.reserve(a.size());
-
-    for (size_t i = 0; i < a.size(); ++i) {
-        if (b[i] == 0) {
-            throw std::runtime_error("Division by zero is not allowed!");
+// переходим к сравнению маски и IP через цикл for
+    for (size_t i = 0; i < 4; ++i) {
+        if (mask_parts[i] != "*" && mask_parts[i] != ip_parts[i]) {
+            return false;
         }
-        result.push_back(a[i] / b[i]);
     }
+    return true; }
 
-    return result;
-}
-
-template<typename Tuple, size_t... Indices>
-Tuple div_helper(const Tuple& a, const Tuple& b, std::index_sequence<Indices...>) {
-    return std::make_tuple(std::get<Indices>(a) / std::get<Indices>(b)...);
-}
-
-template<typename... Args>
-std::tuple<Args...> div(const std::tuple<Args...>& a, const std::tuple<Args...>& b) {
-    static_assert(sizeof...(Args) > 0, "Tuple should not be empty!");
-
-    if constexpr (sizeof...(Args) > 0) {
-        return div_helper(a, b, std::index_sequence_for<Args...>());
-    }
-}
 
 int main() {
-    std::vector<int> a{1, 2, 3, 4};
-    std::vector<int> b{1, 2};
-    std::vector<int> c{1, 3, 5, 7};
-    std::tuple<int, int> d{2, 1};
 
-    {
-        std::cout << "Result of subtracting №1 (vector): ";
-        std::vector<int> res = substr(a, b, c);
-        for (const auto &val: res) {
-            std::cout << val << ", ";
-        }
+    // запрос у пользователя ввода маски
+    std::cout << "Enter the IP address mask in the format *.*.*.*: ";
+    std::string inputMask;
+    std::cin >> inputMask;
 
-        int res2 = substr(1, 2, 3, 4);
-        std::cout << std::endl;
-        std::cout << "Result of subtracting №2 (int): " << res2 << std::endl;
-
-        std::cout << "Result of subtracting №3 (tuple): ";
-        auto res3 = substr(d, std::make_tuple(1, 2), std::make_tuple(3, 4));
-        std::apply([](const auto &... args) { ((std::cout << args << ", "), ...); }, res3);
-        std::cout << std::endl;
+    // открываем файл с ip
+    std::ifstream inputFile("/Users/kseniatrusina/template/template/ipNumbers.txt");
+    if (!inputFile) {
+        std::cerr << "File can't be opened" << std::endl;
+        return 1;
     }
 
-    {
-        std::cout << std::endl;
-        std::cout << "Result of multiplication №1 (vector): ";
-        std::vector<int> res = multiply(a, b, c);
-        for (const auto &val: res) {
-            std::cout << val << ", ";
+    std::string line;
+    bool found = false;
+
+    //векторы для хранения IP и маски
+    std::vector<std::string> ip_parts;
+    std::vector<std::string> mask_parts;
+
+    // считываем IP из файла и ищем совпадения
+    while (std::getline (inputFile, line)) { // обнуляем startPosition перед каждым новым IP-адресом
+        size_t startPosition = 0;
+        mask_parts.clear(); // очищаем части маски перед каждым новым IP-адресом
+
+        // разбиваем маску из файла на отдельные элементы
+        size_t endPosition = 0;
+        while ((endPosition = line.find('.', startPosition)) != std::string::npos) {
+            mask_parts.push_back(line.substr(startPosition, endPosition - startPosition));
+            startPosition = endPosition + 1;
         }
+        mask_parts.push_back(line.substr(startPosition));
 
-        int res2 = multiply(1, 2, 3, 4);
-        std::cout << std::endl;
-        std::cout << "Result of multiplication №2 (int): " << res2 << std::endl;
-
-        std::cout << "Result of multiplication №3 (tuple): ";
-        auto res3 = multiply(d, std::make_tuple(1, 2), std::make_tuple(3, 4));
-        std::apply([](const auto &... args) { ((std::cout << args << ", "), ...); }, res3);
-        std::cout << std::endl;
+        // вызываем функцию match, передаем векторы с элементами IP-адреса
+        if (match(line, inputMask, ip_parts, mask_parts)) {
+            std::cout << "The following addresses were found: " << line << std::endl;
+            found = true;
+        }
     }
 
-    try {
-        {
-            std::cout << "Result of dividing №1 (vector): ";
-            std::vector<int> res = div(a, b);
-            for (const auto &val: res) {
-                std::cout << val << ", ";
-            }
-            std::cout << std::endl;
+    inputFile.close();
 
-            std::cout << "Result of dividing №2 (tuple): ";
-            auto res2 = div(d, std::make_tuple(1, 2));
-            std::apply([](const auto &... args) { ((std::cout << args << ", "), ...); }, res2);
-            std::cout << std::endl;
-        }
-    } catch (const std::exception& ex) {
-        std::cout << "Error: " << ex.what() << std::endl;
+    // если совпадений нет
+    if (!found) {
+        std::cout << "IP-addresse can't be found" << std::endl;
     }
-
     return 0;
 }
+
+
+
+
+
+//#include <iostream>
+//#include <fstream>
+//#include <vector>
+//#include <array>
+//#include <variant>
+//#include <string>
+//#include <sstream>
+//
+//using ip_v4_type = std::array<uint8_t, 4>; // создание псевдонима
+//
+//using ip_v4_mask_element = std::variant<std::uint8_t, char>;
+//using ip_v4_mask = std::array<ip_v4_mask_element, 4>;
+//
+//bool match(const ip_v4_type &ip, const ip_v4_mask &mask) {
+//    for (size_t i = 0; i < 4; i++) {
+//        auto &mask_element = mask[i];
+//        if (std::holds_alternative<char>(mask_element)) { // ищем тип чар в элементах маски
+//            continue;
+//        }
+//        if (std::get<std::uint8_t>(mask_element) != ip[i]) {
+//            return false;
+//        }
+//    }
+//    return true;
+//}
+//
+//int main() {
+//
+//    ip_v4_mask mask;
+//
+//    // запрос у пользователя ввода маски
+//    std::cout << "Enter the IP address mask in the format *.*.*.*: ";
+//    std::string inputMask;
+//    std::getline(std::cin, inputMask);
+//
+//    std::stringstream ss(inputMask);
+//    char divider; // ищем число в маске
+//    for (size_t i = 0; i < 4; ++i) {
+//        std::string part;
+//        ss >> part;
+//        if (part == "*") {
+//            mask[i] = '*';
+//        }
+//        else {
+//            mask[i] = static_cast<std::uint8_t>(std::stoi(part)); // stoi преобразует последовательность чисел из part в целое число
+//        }
+//        ss >> divider;
+//    }
+//
+//    // открываем файл с ip
+//    std::ifstream inputFile("ipNumbers.txt");
+//    if (!inputFile) {
+//        std::cerr << "File can't be opened" << std::endl;
+//        return 1;
+//    }
+//
+//    std::vector<ip_v4_type> matchIP;
+//
+//    std::string line;
+//    while (std::getline(inputFile, line)) { // вычисляем все строчки в открытом файле
+//        std::stringstream ss(line);
+//        ip_v4_type ip;
+//
+//        for (size_t i = 0; i < 4; ++i) {
+//            int num;
+//            char dot;
+//            ss >> num;
+//            ss >> dot;
+//            ip[i] = static_cast<uint8_t>(num);
+//        }
+//
+//        if (match(ip, mask)) {
+//            matchIP.push_back(ip);
+//        }
+//    }
+//
+//    inputFile.close();
+//
+//    std::cout << "The following addresses were found: " << std::endl;
+//    for (const auto &ip: matchIP) {
+//        std::cout << static_cast<int>(ip[0]) << '.' << static_cast<int>(ip[1]) << '.'
+//                  << static_cast<int>(ip[2]) << '.' << static_cast<int>(ip[3]) << std::endl;
+//    }
+//    return 0;
+//    }
+//
+//    // подготавливаем маску
+//
+//    std::variant<std::uint8_t, char> v = std::uint8_t{255};
+//    v = '*';
+//
+//    if (auto *u8 = std::get_if<std::uint8_t>(&v)) {
+//        // process uin8_t
+//    } else if (auto *ch = std::get_if<char>(&v)) {
+//        // process char
+//    } else {
+//        std::terminate();
+//    }
+//
+//
+//    std::array<std::uint8_t, 4>
+//
+//    // узнаём от пользователя маску ip, который ему нужен
+//
+//    // 2.1.2.1
+//    // 255.*.*.*
+//    // *.*.1.*
+//
+//    // делаем поиск по этой маске среди считанных ip
+//
+//    // если такие ip есть выводим их в консоль
+//    // если их нет, то выыводим ах и увы.
