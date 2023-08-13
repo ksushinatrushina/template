@@ -1,199 +1,194 @@
 ﻿#include <iostream>
+#include <vector>
+#include <tuple>
+#include <array>
+#include <variant>
 #include <fstream>
 #include <string>
-#include <vector>
+#include <sstream>
+#include <optional>
 
-bool match(const std::string &ip, const std::string &mask,
-    std::vector<std::string>& ip_parts,
-    std::vector<std::string>& mask_parts) {
+#define TEST_SUCCEEDED(expr) \
+        if (expr)\
+        {\
+            std::cout << "[TEST SUCCEEDED]: " << #expr << "\n";\
+        }\
+        else \
+        {\
+            std::cout << "[TEST FAILED]: " << LINE << "\n";\
+            std::terminate();\
+        }
 
-    // разбиваем IP-адрес и маску на отдельные элементы
-    size_t startPosition = 0, endPosition = 0;
-    while ((endPosition = ip.find('.', startPosition)) != std::string::npos) { // цикл ищет символ точки и возвращает позицию найденной точки, либо через npose, что ее не найдено
-        ip_parts.push_back(ip.substr(startPosition, endPosition - startPosition)); // когда мы нашли точку, мы забираем все, что было между точками через функцию substr и записываем в ip_parts
-        startPosition = endPosition + 1;
+namespace bl
+{
+    using ip_v4_type = std::array<uint8_t, 4>; // создание псевдонима
+    using ip_v4_mask_element = std::variant<std::optional<uint8_t>, char>;
+    using ip_v4_mask = std::array<ip_v4_mask_element, 4>;
+
+    bool check_mask(const ip_v4_type& ip, const ip_v4_mask& ip_mask)
+    {
+        for (int i = 0; i < ip.size(); ++i)
+        {
+            if (const auto& u8 = std::get_if<std::optional<uint8_t>>(&ip_mask[i]))
+            {
+                if (*u8 && ip[i] != *u8)
+                {
+                    return false;
+                }
+            }
+            else if (const auto* ch = std::get_if<char>(&ip_mask[i]))
+            {
+                if (*ch == '*' || *ch == '?')
+                {
+                    continue;
+                }
+                else
+                {
+                    std::cout << "Unknown mask character!" << std::endl;
+                    return false;
+                }
+            }
+            else {
+                std::terminate();
+            }
+        }
+        return true;
     }
-    ip_parts.push_back(ip.substr(startPosition));
 
-    startPosition = 0; // то же самое для маски
-    while ((endPosition = mask.find('.', startPosition)) != std::string::npos) {
-        mask_parts.push_back(mask.substr(startPosition, endPosition - startPosition));
-        startPosition = endPosition + 1;
+    bool contains_ip(const std::vector<ip_v4_type>& ips, const std::string& inputMask)
+    {
+        std::stringstream stream{ inputMask };
+        ip_v4_mask ip_mask;
+        for (int i = 0; i < ip_mask.size(); ++i)
+        {
+            int ip_part;
+            stream >> ip_part;
+            if (stream)
+            {
+                if (ip_part < 0 || ip_part > 255)
+                {
+                    std::cout << "Invalid mask!" << std::endl;
+                    return false;
+                }
+                ip_mask[i] = (uint8_t)ip_part;
+            }
+            else
+            {
+                char mask_character;
+                stream.clear();
+                stream >> mask_character;
+                if (!stream)
+                {
+                    std::cout << "Invalid mask!" << std::endl;
+                    return false;
+                }
+                ip_mask[i] = mask_character;
+            }
+
+            stream.get();
+        }
+
+        for (auto& ip : ips)
+        {
+            if (check_mask(ip, ip_mask))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
-    mask_parts.push_back(mask.substr(startPosition));
 
-// переходим к сравнению маски и IP через цикл for
-    for (size_t i = 0; i < 4; ++i) {
-        if (mask_parts[i] != "*" && mask_parts[i] != ip_parts[i]) {
+    bool read_ips(const std::string& filePath, std::vector<ip_v4_type>& ips)
+    {
+        std::ifstream istream (filePath);
+        if (!istream) {
+            std::cerr << "File can't be opened" << std::endl;
             return false;
         }
+
+        while (istream)
+        {
+            ip_v4_type ip;
+            for (int i = 0; i < ip.size(); ++i)
+            {
+                int ip_part;
+                istream >> ip_part;
+                ip[i] = ip_part;
+                istream.get();
+            }
+            ips.push_back(ip);
+        }
+        return true;
     }
-    return true; }
+}
 
+void test_contains_ip()
+{
+    {
+        std::vector<bl::ip_v4_type> ips;
+        ips.push_back(std::array<uint8_t, 4>{1, 1, 1, 1});
+        ips.push_back(std::array<uint8_t, 4>{192, 168, 0, 1});
+        ips.push_back(std::array<uint8_t, 4>{10, 0, 0, 1});
+        ips.push_back(std::array<uint8_t, 4>{172, 16, 0, 1});
 
-int main() {
+        TEST_SUCCEEDED(bl::contains_ip(ips, "1.1.1.1"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "*.*.*.*"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "*.1.1.1"));
 
+        TEST_SUCCEEDED(!bl::contains_ip(ips, "2.1.1.1"));
+
+        TEST_SUCCEEDED(!bl::contains_ip(ips, "as\ndasd"));
+        TEST_SUCCEEDED (!bl::contains_ip(ips, "*.1.a.v"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "192.168.0.1"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "*.168.*.*"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "10.*.0.1"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "?.?.?.?"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "172.16.?.?"));
+        TEST_SUCCEEDED(!bl::contains_ip(ips, "172.17.?.?"));
+        TEST_SUCCEEDED(!bl::contains_ip(ips, "172.17.*.*"));
+        TEST_SUCCEEDED(bl::contains_ip(ips, "172.16.*.*.*"));
+    }
+
+    TEST_SUCCEEDED(!bl::contains_ip({}, "2.1.1.1"));
+
+    std::cout << "[ALL TESTS PASSED]" << std::endl;
+}
+
+int main()
+{
+    test_contains_ip();
+
+    std::stringstream s;
+    s << "1.1.1.1\n1.2.3.1\n";
+    std::vector<bl::ip_v4_type> ips;
+    TEST_SUCCEEDED(bl::read_ips(s, ips));
+    TEST_SUCCEEDED(ips[0][0] == 1);
+
+    return 0;
+}
+
+int main1()
+{
     // запрос у пользователя ввода маски
-    std::cout << "Enter the IP address mask in the format *.*.*.*: ";
+    std::cout << "Enter the IP address mask in the format *.*.*.* or ?.?.?.?: ";
     std::string inputMask;
     std::cin >> inputMask;
 
     // открываем файл с ip
-    std::ifstream inputFile("/Users/kseniatrusina/template/template/ipNumbers.txt");
-    if (!inputFile) {
-        std::cerr << "File can't be opened" << std::endl;
-        return 1;
-    }
-
-    std::string line;
-    bool found = false;
-
-    //векторы для хранения IP и маски
-    std::vector<std::string> ip_parts;
-    std::vector<std::string> mask_parts;
-
-    // считываем IP из файла и ищем совпадения
-    while (std::getline (inputFile, line)) { // обнуляем startPosition перед каждым новым IP-адресом
-        size_t startPosition = 0;
-        mask_parts.clear(); // очищаем части маски перед каждым новым IP-адресом
-
-        // разбиваем маску из файла на отдельные элементы
-        size_t endPosition = 0;
-        while ((endPosition = line.find('.', startPosition)) != std::string::npos) {
-            mask_parts.push_back(line.substr(startPosition, endPosition - startPosition));
-            startPosition = endPosition + 1;
-        }
-        mask_parts.push_back(line.substr(startPosition));
-
-        // вызываем функцию match, передаем векторы с элементами IP-адреса
-        if (match(line, inputMask, ip_parts, mask_parts)) {
-            std::cout << "The following addresses were found: " << line << std::endl;
-            found = true;
-        }
-    }
+    std::ifstream inputFile("ipNumbers.txt");
+    std::vector<bl::ip_v4_type> ips;
+    if (!bl::read_ips(inputFile, ips)) {
+        std::cout << "Failed to read ips" << std::endl;
+        return 0;
 
     inputFile.close();
 
-    // если совпадений нет
-    if (!found) {
-        std::cout << "IP-addresse can't be found" << std::endl;
+    if (bl::contains_ip(ips, inputMask))
+    {
+        std::cout << "Found!" << std::endl;
     }
+    else
+        std::cout << "IP-addresse can't be found" << std::endl;
     return 0;
 }
-
-
-
-
-
-//#include <iostream>
-//#include <fstream>
-//#include <vector>
-//#include <array>
-//#include <variant>
-//#include <string>
-//#include <sstream>
-//
-//using ip_v4_type = std::array<uint8_t, 4>; // создание псевдонима
-//
-//using ip_v4_mask_element = std::variant<std::uint8_t, char>;
-//using ip_v4_mask = std::array<ip_v4_mask_element, 4>;
-//
-//bool match(const ip_v4_type &ip, const ip_v4_mask &mask) {
-//    for (size_t i = 0; i < 4; i++) {
-//        auto &mask_element = mask[i];
-//        if (std::holds_alternative<char>(mask_element)) { // ищем тип чар в элементах маски
-//            continue;
-//        }
-//        if (std::get<std::uint8_t>(mask_element) != ip[i]) {
-//            return false;
-//        }
-//    }
-//    return true;
-//}
-//
-//int main() {
-//
-//    ip_v4_mask mask;
-//
-//    // запрос у пользователя ввода маски
-//    std::cout << "Enter the IP address mask in the format *.*.*.*: ";
-//    std::string inputMask;
-//    std::getline(std::cin, inputMask);
-//
-//    std::stringstream ss(inputMask);
-//    char divider; // ищем число в маске
-//    for (size_t i = 0; i < 4; ++i) {
-//        std::string part;
-//        ss >> part;
-//        if (part == "*") {
-//            mask[i] = '*';
-//        }
-//        else {
-//            mask[i] = static_cast<std::uint8_t>(std::stoi(part)); // stoi преобразует последовательность чисел из part в целое число
-//        }
-//        ss >> divider;
-//    }
-//
-//    // открываем файл с ip
-//    std::ifstream inputFile("ipNumbers.txt");
-//    if (!inputFile) {
-//        std::cerr << "File can't be opened" << std::endl;
-//        return 1;
-//    }
-//
-//    std::vector<ip_v4_type> matchIP;
-//
-//    std::string line;
-//    while (std::getline(inputFile, line)) { // вычисляем все строчки в открытом файле
-//        std::stringstream ss(line);
-//        ip_v4_type ip;
-//
-//        for (size_t i = 0; i < 4; ++i) {
-//            int num;
-//            char dot;
-//            ss >> num;
-//            ss >> dot;
-//            ip[i] = static_cast<uint8_t>(num);
-//        }
-//
-//        if (match(ip, mask)) {
-//            matchIP.push_back(ip);
-//        }
-//    }
-//
-//    inputFile.close();
-//
-//    std::cout << "The following addresses were found: " << std::endl;
-//    for (const auto &ip: matchIP) {
-//        std::cout << static_cast<int>(ip[0]) << '.' << static_cast<int>(ip[1]) << '.'
-//                  << static_cast<int>(ip[2]) << '.' << static_cast<int>(ip[3]) << std::endl;
-//    }
-//    return 0;
-//    }
-//
-//    // подготавливаем маску
-//
-//    std::variant<std::uint8_t, char> v = std::uint8_t{255};
-//    v = '*';
-//
-//    if (auto *u8 = std::get_if<std::uint8_t>(&v)) {
-//        // process uin8_t
-//    } else if (auto *ch = std::get_if<char>(&v)) {
-//        // process char
-//    } else {
-//        std::terminate();
-//    }
-//
-//
-//    std::array<std::uint8_t, 4>
-//
-//    // узнаём от пользователя маску ip, который ему нужен
-//
-//    // 2.1.2.1
-//    // 255.*.*.*
-//    // *.*.1.*
-//
-//    // делаем поиск по этой маске среди считанных ip
-//
-//    // если такие ip есть выводим их в консоль
-//    // если их нет, то выыводим ах и увы.
